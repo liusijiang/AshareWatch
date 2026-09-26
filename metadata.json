@@ -1,0 +1,6 @@
+{
+  "name": "A-Share Stock Pool & Real-Time Market Tracker",
+  "description": "A-股跟踪池应用：多数据源容错增量缓存、全池实时行情、分时与K线图表、逐笔成交及密码门禁管理系统。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

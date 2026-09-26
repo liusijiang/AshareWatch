@@ -1,0 +1,522 @@
+{
+  "description": "A股金融接口实测采集原始与解析样本数据（服务器集中统一缓存数据结构设计基准）",
+  "generatedAt": "2026-09-25T18:04:44.968Z",
+  "cacheStructureDesignReference": {
+    "tickSnapshotFormat": {
+      "symbol": "sz300855",
+      "code": "300855",
+      "name": "图南股份",
+      "price": 34.37,
+      "preClose": 35.01,
+      "open": 34.8,
+      "volume": 31491,
+      "amount": 10861,
+      "high": 35.09,
+      "low": 34,
+      "change": -0.64,
+      "changePercent": -1.83,
+      "turnoverRate": 1.07,
+      "pe": 43.66,
+      "time": "20260924161415",
+      "bids": [
+        {
+          "price": 34.37,
+          "volume": 4
+        },
+        {
+          "price": 34.32,
+          "volume": 206
+        },
+        {
+          "price": 34.31,
+          "volume": 65
+        },
+        {
+          "price": 34.3,
+          "volume": 15
+        },
+        {
+          "price": 34.29,
+          "volume": 5
+        }
+      ],
+      "asks": [
+        {
+          "price": 34.38,
+          "volume": 7
+        },
+        {
+          "price": 34.39,
+          "volume": 20
+        },
+        {
+          "price": 34.4,
+          "volume": 102
+        },
+        {
+          "price": 34.42,
+          "volume": 11
+        },
+        {
+          "price": 34.47,
+          "volume": 10
+        }
+      ]
+    },
+    "intradayMinuteBarFormat": {
+      "time": "2026-09-24 09:30",
+      "open": 34.8,
+      "close": 34.8,
+      "high": 34.8,
+      "low": 34.8,
+      "volume": 30,
+      "amount": 104400,
+      "avgPrice": 34.8
+    },
+    "historicalKlineBarFormat": {
+      "time": "2026-09-18",
+      "open": 35.12,
+      "close": 34.92,
+      "high": 35.38,
+      "low": 34.77,
+      "volume": 24345
+    },
+    "afterHoursFixedPriceFormat": {
+      "isSupported": true,
+      "volume": 0,
+      "amount": 0,
+      "dealCount": 0,
+      "bidUnmatched": 0,
+      "askUnmatched": 0
+    },
+    "fundValuationFormat": {
+      "fundcode": "005827",
+      "name": "易方达蓝筹精选",
+      "dwjz": "1.8540",
+      "gsz": "1.8625",
+      "gszzl": "0.46",
+      "gztime": "2026-09-25T18:04:44.813Z"
+    }
+  },
+  "fullTestResults": [
+    {
+      "id": "T-01",
+      "name": "通达信行情网关 TCP:7709 直连探测",
+      "target": "119.147.212.81:7709",
+      "protocol": "TCP Socket (Port 7709)",
+      "status": "warning",
+      "latencyMs": 1500,
+      "details": "TCP握手超时 (云容器出站防火墙限制)",
+      "sampleData": {
+        "source": "TongDaXin TCP Port 7709",
+        "host": "119.147.212.81",
+        "port": 7709,
+        "durationMs": 1500,
+        "success": false,
+        "message": "TCP握手超时 (云容器出站防火墙限制)"
+      }
+    },
+    {
+      "id": "T-02",
+      "name": "腾讯财经批量实时行情快照 (超长拼接+GBK转码)",
+      "target": "https://qt.gtimg.cn/q=...",
+      "protocol": "HTTP GET (GBK/Plaintext)",
+      "status": "passed",
+      "latencyMs": 183,
+      "details": "成功批量拉取 10/10 只标的，无中文乱码",
+      "sampleData": [
+        {
+          "symbol": "sz300855",
+          "code": "300855",
+          "name": "图南股份",
+          "price": 34.37,
+          "preClose": 35.01,
+          "open": 34.8,
+          "volume": 31491,
+          "amount": 10861,
+          "high": 35.09,
+          "low": 34,
+          "change": -0.64,
+          "changePercent": -1.83,
+          "turnoverRate": 1.07,
+          "pe": 43.66,
+          "time": "20260924161415",
+          "bids": [
+            {
+              "price": 34.37,
+              "volume": 4
+            },
+            {
+              "price": 34.32,
+              "volume": 206
+            },
+            {
+              "price": 34.31,
+              "volume": 65
+            },
+            {
+              "price": 34.3,
+              "volume": 15
+            },
+            {
+              "price": 34.29,
+              "volume": 5
+            }
+          ],
+          "asks": [
+            {
+              "price": 34.38,
+              "volume": 7
+            },
+            {
+              "price": 34.39,
+              "volume": 20
+            },
+            {
+              "price": 34.4,
+              "volume": 102
+            },
+            {
+              "price": 34.42,
+              "volume": 11
+            },
+            {
+              "price": 34.47,
+              "volume": 10
+            }
+          ]
+        },
+        {
+          "symbol": "sh601606",
+          "code": "601606",
+          "name": "长城军工",
+          "price": 31.9,
+          "preClose": 32.07,
+          "open": 32.1,
+          "volume": 155765,
+          "amount": 49892,
+          "high": 32.35,
+          "low": 31.81,
+          "change": -0.17,
+          "changePercent": -0.53,
+          "turnoverRate": 2.15,
+          "pe": -380.59,
+          "time": "20260924161453",
+          "bids": [
+            {
+              "price": 31.89,
+              "volume": 143
+            },
+            {
+              "price": 31.88,
+              "volume": 308
+            },
+            {
+              "price": 31.87,
+              "volume": 126
+            },
+            {
+              "price": 31.86,
+              "volume": 687
+            },
+            {
+              "price": 31.85,
+              "volume": 770
+            }
+          ],
+          "asks": [
+            {
+              "price": 31.9,
+              "volume": 7
+            },
+            {
+              "price": 31.91,
+              "volume": 60
+            },
+            {
+              "price": 31.92,
+              "volume": 419
+            },
+            {
+              "price": 31.93,
+              "volume": 36
+            },
+            {
+              "price": 31.94,
+              "volume": 36
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "T-03",
+      "name": "腾讯财经历史复权 K 线 (前复权日K/分时K)",
+      "target": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get",
+      "protocol": "HTTP GET (JSON)",
+      "status": "passed",
+      "latencyMs": 83,
+      "details": "成功获取 sz300855 共 30 根前复权日K线，极速响应",
+      "sampleData": [
+        {
+          "time": "2026-09-18",
+          "open": 35.12,
+          "close": 34.92,
+          "high": 35.38,
+          "low": 34.77,
+          "volume": 24345
+        },
+        {
+          "time": "2026-09-21",
+          "open": 34.85,
+          "close": 36.32,
+          "high": 36.84,
+          "low": 34.81,
+          "volume": 70140
+        },
+        {
+          "time": "2026-09-22",
+          "open": 36.19,
+          "close": 34.98,
+          "high": 36.3,
+          "low": 34.86,
+          "volume": 54456
+        },
+        {
+          "time": "2026-09-23",
+          "open": 34.86,
+          "close": 35.01,
+          "high": 35.15,
+          "low": 34.16,
+          "volume": 34230
+        },
+        {
+          "time": "2026-09-24",
+          "open": 34.8,
+          "close": 34.37,
+          "high": 35.09,
+          "low": 34,
+          "volume": 31491
+        }
+      ]
+    },
+    {
+      "id": "T-04",
+      "name": "东方财富当日逐分分时明细 (1-min走势线与均价)",
+      "target": "https://push2.eastmoney.com/api/qt/stock/trends2/get",
+      "protocol": "HTTP GET (JSON)",
+      "status": "passed",
+      "latencyMs": 4945,
+      "details": "成功获取 图南股份(300855) 共 241 个逐分数据点",
+      "sampleData": [
+        {
+          "time": "2026-09-24 09:30",
+          "open": 34.8,
+          "close": 34.8,
+          "high": 34.8,
+          "low": 34.8,
+          "volume": 30,
+          "amount": 104400,
+          "avgPrice": 34.8
+        },
+        {
+          "time": "2026-09-24 09:31",
+          "open": 35,
+          "close": 34.88,
+          "high": 35.09,
+          "low": 34.66,
+          "volume": 672,
+          "amount": 2342232,
+          "avgPrice": 34.852
+        },
+        {
+          "time": "2026-09-24 09:32",
+          "open": 34.83,
+          "close": 34.88,
+          "high": 34.88,
+          "low": 34.78,
+          "volume": 283,
+          "amount": 985682,
+          "avgPrice": 34.846
+        },
+        {
+          "time": "2026-09-24 09:33",
+          "open": 34.92,
+          "close": 34.88,
+          "high": 34.92,
+          "low": 34.85,
+          "volume": 117,
+          "amount": 408146,
+          "avgPrice": 34.85
+        },
+        {
+          "time": "2026-09-24 09:34",
+          "open": 34.89,
+          "close": 34.86,
+          "high": 34.94,
+          "low": 34.86,
+          "volume": 256,
+          "amount": 893455,
+          "avgPrice": 34.86
+        }
+      ]
+    },
+    {
+      "id": "T-05",
+      "name": "新浪财经实时行情快照 (Referer防盗链测试)",
+      "target": "https://hq.sinajs.cn/list=...",
+      "protocol": "HTTP GET (Referer+GBK)",
+      "status": "passed",
+      "latencyMs": 103,
+      "details": "携带合法 Referer 成功获取 2 只标的，未被 403 阻断",
+      "sampleData": [
+        {
+          "symbol": "sz300855",
+          "name": "图南股份",
+          "open": 34.8,
+          "preClose": 35.01,
+          "price": 34.37,
+          "high": 35.09,
+          "low": 34,
+          "bid1": 34.37,
+          "ask1": 34.38,
+          "volume": 3149055,
+          "amount": 108607420.87,
+          "date": "2026-09-24",
+          "time": "16:29:30"
+        },
+        {
+          "symbol": "sh600519",
+          "name": "贵州茅台",
+          "open": 1250.01,
+          "preClose": 1251.24,
+          "price": 1237,
+          "high": 1256.13,
+          "low": 1231.05,
+          "bid1": 1237,
+          "ask1": 1237.05,
+          "volume": 3123935,
+          "amount": 3867310920,
+          "date": "2026-09-24",
+          "time": "15:34:59"
+        }
+      ]
+    },
+    {
+      "id": "T-06",
+      "name": "科创/创业板盘后固定价格交易字段提取 (f260~f264)",
+      "target": "https://push2.eastmoney.com/api/qt/stock/get",
+      "protocol": "HTTP GET (JSON)",
+      "status": "passed",
+      "latencyMs": 652,
+      "details": "测试标的: 中芯国际(688981) - 科创板，盘后字段支持且容错正常",
+      "sampleData": {
+        "isSupported": true,
+        "volume": 0,
+        "amount": 0,
+        "dealCount": 0,
+        "bidUnmatched": 0,
+        "askUnmatched": 0
+      }
+    },
+    {
+      "id": "T-07",
+      "name": "场内交易型基金 (科创50ETF 588000) 行情兼容性",
+      "target": "https://qt.gtimg.cn/q=sh588000",
+      "protocol": "HTTP GET",
+      "status": "passed",
+      "latencyMs": 20,
+      "details": "场内 ETF 完美兼容标准 A 股股票接口，名称: 科创50ETF华夏, 现价: 1.713",
+      "sampleData": {
+        "symbol": "sh588000",
+        "code": "588000",
+        "name": "科创50ETF华夏",
+        "price": 1.713,
+        "preClose": 1.755,
+        "open": 1.745,
+        "volume": 31339431,
+        "amount": 542001,
+        "high": 1.747,
+        "low": 1.712,
+        "change": -0.042,
+        "changePercent": -2.39,
+        "turnoverRate": 5.69,
+        "pe": 0,
+        "time": "20260924161456",
+        "bids": [
+          {
+            "price": 1.712,
+            "volume": 41558
+          },
+          {
+            "price": 1.711,
+            "volume": 43580
+          },
+          {
+            "price": 1.71,
+            "volume": 95967
+          },
+          {
+            "price": 1.709,
+            "volume": 28478
+          },
+          {
+            "price": 1.708,
+            "volume": 39171
+          }
+        ],
+        "asks": [
+          {
+            "price": 1.713,
+            "volume": 3650
+          },
+          {
+            "price": 1.714,
+            "volume": 10221
+          },
+          {
+            "price": 1.715,
+            "volume": 15056
+          },
+          {
+            "price": 1.716,
+            "volume": 21451
+          },
+          {
+            "price": 1.717,
+            "volume": 6218
+          }
+        ]
+      }
+    },
+    {
+      "id": "T-08",
+      "name": "天天基金网公募基金盘中实时估值 (含移动端开放API容灾)",
+      "target": "https://fundmobapi.eastmoney.com/...",
+      "protocol": "HTTP GET (JSON)",
+      "status": "passed",
+      "latencyMs": 7315,
+      "details": "成功提取基金实时估值: 易方达蓝筹精选, 估算净值: 1.8625, 涨跌幅: 0.46%",
+      "sampleData": {
+        "fundcode": "005827",
+        "name": "易方达蓝筹精选",
+        "dwjz": "1.8540",
+        "gsz": "1.8625",
+        "gszzl": "0.46",
+        "gztime": "2026-09-25T18:04:44.813Z"
+      }
+    },
+    {
+      "id": "T-09",
+      "name": "雪球财经数据源 (Cookie Token 探针)",
+      "target": "https://stock.xueqiu.com/v5/stock/quote.json",
+      "protocol": "HTTPS GET (Cookie)",
+      "status": "warning",
+      "latencyMs": 154,
+      "details": "雪球接口需 Cookie (HTTP 400) (需要定期维护 xq_a_token)",
+      "sampleData": {
+        "note": "需服务端维护自动换取Token机制"
+      }
+    }
+  ]
+}
