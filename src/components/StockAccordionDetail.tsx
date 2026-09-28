@@ -9,19 +9,28 @@ interface Props {
   quote?: QuoteSnapshot;
   onCollapse: () => void;
   onOpenFullDetail?: () => void;
+  realtimeMinutePoints?: MinutePoint[];
 }
 
 export const StockAccordionDetail: React.FC<Props> = ({
   stock,
   quote,
   onCollapse,
-  onOpenFullDetail
+  onOpenFullDetail,
+  realtimeMinutePoints
 }) => {
   const [tab, setTab] = useState<'minute' | 'kline'>('minute');
   const [minutePoints, setMinutePoints] = useState<MinutePoint[]>([]);
   const [klines, setKlines] = useState<KlinePoint[]>([]);
   const [loadingMinute, setLoadingMinute] = useState(false);
   const [loadingKline, setLoadingKline] = useState(false);
+
+  // 实时 SSE 分时走势同步
+  useEffect(() => {
+    if (realtimeMinutePoints && realtimeMinutePoints.length > 0) {
+      setMinutePoints(realtimeMinutePoints);
+    }
+  }, [realtimeMinutePoints]);
 
   // 展开时激活并拉取分时走势与日K线
   useEffect(() => {

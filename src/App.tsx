@@ -18,7 +18,7 @@ import {
   Flame,
   Tag
 } from 'lucide-react';
-import { StockPoolItem, QuoteSnapshot, TradingSession } from './types.ts';
+import { StockPoolItem, QuoteSnapshot, TradingSession, MinutePoint, TickPoint } from './types.ts';
 import { PasswordGateModal } from './components/PasswordGateModal.tsx';
 import { AddStockDrawer } from './components/AddStockDrawer.tsx';
 import { MarketDetailPanel } from './components/MarketDetailPanel.tsx';
@@ -46,16 +46,21 @@ export default function App() {
 
   // 当前选中的股票 (默认选中首个或图南股份)
   const [selectedCode, setSelectedCode] = useState<string>('');
+  const selectedCodeRef = useRef(selectedCode);
+  useEffect(() => {
+    selectedCodeRef.current = selectedCode;
+  }, [selectedCode]);
+
+  const [realtimeMinutes, setRealtimeMinutes] = useState<{ code: string; points: MinutePoint[] } | null>(null);
+  const [realtimeTicks, setRealtimeTicks] = useState<{ code: string; ticks: TickPoint[] } | null>(null);
+
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isAddDrawerOpen, setIsAddDrawerOpen] = useState(false);
   const [token, setToken] = useState<string | null>(localStorage.getItem('admin_token'));
   const [healthInfo, setHealthInfo] = useState<any>(null);
   const [showHealthModal, setShowHealthModal] = useState(false);
 
-  // 维护每只股票最近的历史价格轨迹用于 Sparkline
-  const sparklineHistoryRef = useRef<Map<string, number[]>>(new Map());
-
-  // 1. 初始化拉取股票池和初始行情
+  // 1. 初始化拉取股票池和初始行情，并建立定时健康检查
   useEffect(() => {
     fetchPool();
     fetchQuotes();
@@ -68,7 +73,16 @@ export default function App() {
       setShanghaiClock(timeStr);
     }, 1000);
 
-    return () => clearInterval(clockTimer);
+    // 盘中定时全量数据同步对齐 (每 25 秒)，保证即使在低频时段全池缩略图与统计指标与后端严格一致
+    const syncTimer = setInterval(() => {
+      fetchQuotes();
+      fetchHealth();
+    }, 25000);
+
+    return () => {
+      clearInterval(clockTimer);
+      clearInterval(syncTimer);
+    };
   }, []);
 
   // 2. 建立 SSE 实时推流连接
@@ -90,11 +104,22 @@ export default function App() {
           }
         };
 
+        // 接收高频行情快照广播
         es.addEventListener('quote_update', (e) => {
           const item = JSON.parse(e.data);
           setQuotes((prev) => {
             const next = new Map(prev);
             const old = next.get(item.code);
+
+            // 保持 sparkline 全天真实分时轨迹：若上游带有 sparkline 则同步，否则仅更新末尾最新价点位
+            let sparkline = item.sparkline || old?.sparkline;
+            if (sparkline && sparkline.length > 0) {
+              sparkline = [...sparkline];
+              sparkline[sparkline.length - 1] = item.price;
+            } else if (item.price > 0) {
+              sparkline = [old?.open || item.price, item.price];
+            }
+
             const merged: QuoteSnapshot = {
               ...(old || {
                 code: item.code,
@@ -123,23 +148,59 @@ export default function App() {
               volume: item.volume || old?.volume || 0,
               amount: item.amount || old?.amount || 0,
               timestamp: item.timestamp,
-              fetched_at: Date.now()
+              fetched_at: Date.now(),
+              sparkline
             };
             next.set(item.code, merged);
-
-            // 更新 Sparkline 轨迹
-            const history = sparklineHistoryRef.current.get(item.code) || [];
-            if (history.length === 0) {
-              sparklineHistoryRef.current.set(item.code, [item.price]);
-            } else if (history[history.length - 1] !== item.price) {
-              const updatedHist = [...history, item.price].slice(-32);
-              sparklineHistoryRef.current.set(item.code, updatedHist);
-            }
-
             return next;
           });
         });
 
+        // 接收分时数据更新
+        es.addEventListener('minute_update', (e) => {
+          const data = JSON.parse(e.data);
+          const { code, points, sparkline } = data;
+          if (code && Array.isArray(points)) {
+            // 同步列表缩略图
+            setQuotes((prev) => {
+              const next = new Map(prev);
+              const old = next.get(code);
+              if (old) {
+                next.set(code, {
+                  ...old,
+                  sparkline: sparkline || old.sparkline
+                });
+              }
+              return next;
+            });
+
+            // 若为当前正在激活查看的股票，推送给详情图表
+            if (code === selectedCodeRef.current) {
+              setRealtimeMinutes({ code, points });
+            }
+          }
+        });
+
+        // 接收逐笔成交更新
+        es.addEventListener('tick_update', (e) => {
+          const data = JSON.parse(e.data);
+          const { code, ticks } = data;
+          if (code === selectedCodeRef.current && Array.isArray(ticks)) {
+            setRealtimeTicks({ code, ticks });
+          }
+        });
+
+        // 接收交易时段切换 (如午休切换到午后开盘)
+        es.addEventListener('session_change', (e) => {
+          const d = JSON.parse(e.data);
+          if (d.session) {
+            setSession(d.session);
+            fetchQuotes();
+            fetchHealth();
+          }
+        });
+
+        // SSE 初始化完成事件
         es.addEventListener('ready', (e) => {
           const d = JSON.parse(e.data);
           if (d.session) setSession(d.session);
@@ -194,15 +255,12 @@ export default function App() {
         setQuotes((prev) => {
           const next = new Map(prev);
           for (const q of list) {
-            next.set(q.code, q);
-            if (q.sparkline && q.sparkline.length > 0) {
-              sparklineHistoryRef.current.set(q.code, q.sparkline);
-            } else {
-              const hist = sparklineHistoryRef.current.get(q.code) || [];
-              if (hist.length === 0) {
-                sparklineHistoryRef.current.set(q.code, [q.open, q.price].filter(p => p > 0));
-              }
-            }
+            const old = next.get(q.code);
+            next.set(q.code, {
+              ...old,
+              ...q,
+              sparkline: q.sparkline && q.sparkline.length > 0 ? q.sparkline : old?.sparkline
+            });
           }
           return next;
         });
@@ -480,7 +538,7 @@ export default function App() {
                 const isUp = (q?.change_pct ?? 0) > 0;
                 const isDown = (q?.change_pct ?? 0) < 0;
                 const priceColor = isUp ? 'text-rose-400' : isDown ? 'text-emerald-400' : 'text-slate-300';
-                const sparkPoints = sparklineHistoryRef.current.get(stock.code) || (q?.sparkline && q.sparkline.length > 0 ? q.sparkline : [q?.open || 0, q?.price || 0]);
+                const sparkPoints = q?.sparkline && q.sparkline.length > 0 ? q.sparkline : [q?.open || 0, q?.price || 0];
 
                 return (
                   <div key={stock.code} className="border-b border-slate-800/60 last:border-b-0">
@@ -529,6 +587,7 @@ export default function App() {
                             isPositive={isUp}
                             width={54}
                             height={20}
+                            isClosed={session === 'CLOSED'}
                           />
                         </div>
 
@@ -560,6 +619,7 @@ export default function App() {
                           quote={q}
                           onCollapse={() => setExpandedCode(null)}
                           onOpenFullDetail={() => setMobileDetailModalCode(stock.code)}
+                          realtimeMinutePoints={realtimeMinutes?.code === stock.code ? realtimeMinutes.points : undefined}
                         />
                       </div>
                     )}
@@ -577,7 +637,7 @@ export default function App() {
           </div>
         </section>
 
-        {/* ================= 桌面端右侧：行情数据与大幅分时/K线图表 (大屏显示，移动端/平板竖版折叠在列表内部) ================= */}
+        {/* ================= 桌面端右侧：行情数据与大幅分时/K线图表 ================= */}
         <section className="hidden lg:flex flex-1 flex-col min-w-0 min-h-0 bg-slate-950 overflow-hidden">
           <MarketDetailPanel
             stock={currentStock}
@@ -585,6 +645,8 @@ export default function App() {
             onDeleteStock={handleDeleteStock}
             onRequestAuth={() => setIsAuthModalOpen(true)}
             token={token}
+            realtimeMinutePoints={currentStock && realtimeMinutes?.code === currentStock.code ? realtimeMinutes.points : undefined}
+            realtimeTicks={currentStock && realtimeTicks?.code === currentStock.code ? realtimeTicks.ticks : undefined}
           />
         </section>
       </div>
@@ -618,6 +680,8 @@ export default function App() {
               }}
               onRequestAuth={() => setIsAuthModalOpen(true)}
               token={token}
+              realtimeMinutePoints={realtimeMinutes?.code === mobileDetailModalCode ? realtimeMinutes.points : undefined}
+              realtimeTicks={realtimeTicks?.code === mobileDetailModalCode ? realtimeTicks.ticks : undefined}
             />
           </div>
         </div>

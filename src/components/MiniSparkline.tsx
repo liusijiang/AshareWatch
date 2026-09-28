@@ -6,6 +6,7 @@ interface Props {
   isPositive?: boolean;
   width?: number;
   height?: number;
+  isClosed?: boolean; // 是否已收盘 (已收盘则全幅撑满，未收盘按全天自然交易进度推进)
 }
 
 export const MiniSparkline: React.FC<Props> = ({
@@ -13,7 +14,8 @@ export const MiniSparkline: React.FC<Props> = ({
   prevClose,
   isPositive,
   width = 56,
-  height = 20
+  height = 20,
+  isClosed = false
 }) => {
   const gradId = useId().replace(/:/g, '_');
   const validPoints = points.filter(p => typeof p === 'number' && !isNaN(p) && p > 0);
@@ -42,8 +44,12 @@ export const MiniSparkline: React.FC<Props> = ({
   const usableH = height - padY * 2;
   const zeroY = height - padY - ((refPrice - minVal) / range) * usableH;
 
+  // 2. X 轴时间比例基准：A股全天交易（4小时=240分钟）对应 30 个基准采样点
+  // 若已收盘或点数已达 30 点，则全幅平铺；盘中按已完成的时段自然展开 (午休稳定停留在 50% 轴线)
+  const totalSlots = isClosed || validPoints.length >= 30 ? validPoints.length : 30;
+
   const coords = validPoints.map((p, i) => {
-    const x = (i / (validPoints.length - 1)) * (width - 4) + 2;
+    const x = (i / Math.max(1, totalSlots - 1)) * (width - 4) + 2;
     const y = height - padY - ((p - minVal) / range) * usableH;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   });
@@ -59,7 +65,8 @@ export const MiniSparkline: React.FC<Props> = ({
   const lastY = parseFloat(lastCoord[1]);
 
   const pathD = `M ${coords.join(' L ')}`;
-  const areaD = `${pathD} L ${width - 2},${height - 1} L 2,${height - 1} Z`;
+  // 渐变阴影严格沿最后绘制点下落闭合，防止未交易时间段被斜切污染
+  const areaD = `${pathD} L ${lastX},${height - 1} L 2,${height - 1} Z`;
 
   return (
     <svg
@@ -70,12 +77,12 @@ export const MiniSparkline: React.FC<Props> = ({
     >
       <defs>
         <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={strokeColor} stopOpacity={0.22} />
+          <stop offset="0%" stopColor={strokeColor} stopOpacity={0.25} />
           <stop offset="100%" stopColor={strokeColor} stopOpacity={0.02} />
         </linearGradient>
       </defs>
 
-      {/* 昨收基准中轴虚线 (Zero Baseline: 精确区分红涨/绿跌区域与真实波动幅度) */}
+      {/* 昨收基准中轴虚线 (Zero Baseline: 贯穿全宽，精确区分红涨/绿跌区域与真实波动幅度) */}
       <line
         x1={2}
         y1={zeroY}
@@ -105,4 +112,3 @@ export const MiniSparkline: React.FC<Props> = ({
     </svg>
   );
 };
-

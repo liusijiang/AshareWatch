@@ -14,6 +14,7 @@ export const MinuteChart: React.FC<Props> = ({ points, prevClose, height }) => {
   const priceSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const avgSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const prevCloseLineRef = useRef<any>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -167,6 +168,29 @@ export const MinuteChart: React.FC<Props> = ({ points, prevClose, height }) => {
     priceSeriesRef.current.setData(priceData);
     avgSeriesRef.current.setData(avgData);
     volumeSeriesRef.current.setData(volData);
+
+    if (prevClose > 0) {
+      if (prevCloseLineRef.current) {
+        try {
+          priceSeriesRef.current.removePriceLine(prevCloseLineRef.current);
+        } catch (e) {
+          // ignore
+        }
+        prevCloseLineRef.current = null;
+      }
+      try {
+        prevCloseLineRef.current = priceSeriesRef.current.createPriceLine({
+          price: prevClose,
+          color: 'rgba(148, 163, 184, 0.45)',
+          lineWidth: 1,
+          lineStyle: 2,
+          axisLabelVisible: true,
+          title: '昨收'
+        });
+      } catch (e) {
+        // ignore
+      }
+    }
 
     chartRef.current?.timeScale().fitContent();
   }, [points, prevClose]);

@@ -23,6 +23,8 @@ interface Props {
   onDeleteStock: (code: string) => void;
   onRequestAuth: () => void;
   token: string | null;
+  realtimeMinutePoints?: MinutePoint[];
+  realtimeTicks?: TickPoint[];
 }
 
 export const MarketDetailPanel: React.FC<Props> = ({
@@ -30,7 +32,9 @@ export const MarketDetailPanel: React.FC<Props> = ({
   quote,
   onDeleteStock,
   onRequestAuth,
-  token
+  token,
+  realtimeMinutePoints,
+  realtimeTicks
 }) => {
   const [activeTab, setActiveTab] = useState<'minute' | 'kline' | 'ticks' | 'notes'>('minute');
   const [klinePeriod, setKlinePeriod] = useState<'day' | 'week' | 'month'>('day');
@@ -41,6 +45,24 @@ export const MarketDetailPanel: React.FC<Props> = ({
   const [loadingMinute, setLoadingMinute] = useState(false);
   const [loadingKline, setLoadingKline] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // 实时 SSE 分时数据同步
+  useEffect(() => {
+    if (realtimeMinutePoints && realtimeMinutePoints.length > 0) {
+      setMinutePoints(realtimeMinutePoints);
+    }
+  }, [realtimeMinutePoints]);
+
+  // 实时 SSE 逐笔成交数据同步
+  useEffect(() => {
+    if (realtimeTicks && realtimeTicks.length > 0) {
+      setTicks((prev) => {
+        const existingKeys = new Set(prev.map(t => `${t.time}_${t.price}_${t.volume}`));
+        const newUniq = realtimeTicks.filter(t => !existingKeys.has(`${t.time}_${t.price}_${t.volume}`));
+        return [...newUniq.reverse(), ...prev].slice(0, 100);
+      });
+    }
+  }, [realtimeTicks]);
 
   // 挂载或切换股票时拉取详情数据与激活上游调度
   useEffect(() => {

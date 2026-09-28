@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { cacheManager } from './server/cacheManager.ts';
-import { marketScheduler } from './server/scheduler.ts';
+import { marketScheduler, computeSparkline } from './server/scheduler.ts';
 import { verifyPassword, requireWriteAuth } from './server/auth.ts';
 import { getSessionState, getShanghaiDate, isTradingDay } from './server/tradingCalendar.ts';
 import { sourceCircuitBreakers } from './server/circuitBreaker.ts';
@@ -92,15 +92,8 @@ app.delete('/api/pool/:code', requireWriteAuth, (req: Request, res: Response) =>
 app.get('/api/quotes', (_req: Request, res: Response) => {
   const quotes = cacheManager.getQuotes().map(q => {
     const minutePoints = cacheManager.getMinutePoints(q.code);
-    if (minutePoints.length > 0) {
-      // 降采样至 24~30 个点，既保留真实走势波动，又保证轻量快速传输
-      const step = Math.max(1, Math.floor(minutePoints.length / 28));
-      const sparkline = minutePoints
-        .filter((_, idx) => idx % step === 0 || idx === minutePoints.length - 1)
-        .map(p => p.price);
-      return { ...q, sparkline };
-    }
-    return q;
+    const sparkline = computeSparkline(minutePoints, q.price);
+    return { ...q, sparkline };
   });
   res.json(quotes);
 });
@@ -113,14 +106,8 @@ app.get('/api/quotes/:code', (req: Request, res: Response) => {
     return res.status(404).json({ error: '未找到该标的行情数据', code: 'NOT_FOUND' });
   }
   const minutePoints = cacheManager.getMinutePoints(cleanCode);
-  if (minutePoints.length > 0) {
-    const step = Math.max(1, Math.floor(minutePoints.length / 28));
-    const sparkline = minutePoints
-      .filter((_, idx) => idx % step === 0 || idx === minutePoints.length - 1)
-      .map(p => p.price);
-    return res.json({ ...quote, sparkline });
-  }
-  res.json(quote);
+  const sparkline = computeSparkline(minutePoints, quote.price);
+  return res.json({ ...quote, sparkline });
 });
 
 app.get('/api/quotes/:code/minute', async (req: Request, res: Response) => {

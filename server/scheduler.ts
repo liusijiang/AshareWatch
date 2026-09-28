@@ -3,7 +3,31 @@ import { cacheManager } from './cacheManager.ts';
 import { getSessionState, isTradingDay, getShanghaiDate } from './tradingCalendar.ts';
 import { fetchTencentQuotes, fetchSinaQuotes, fetchEastmoneyTrends, fetchEastmoneyDetails, validateQuote } from './dataSources.ts';
 import { sourceCircuitBreakers } from './circuitBreaker.ts';
-import { QuoteSnapshot } from './types.ts';
+import { QuoteSnapshot, MinutePoint, TradingSession } from './types.ts';
+
+/**
+ * 统一分时走势降采样算法：
+ * A股全天 240 分钟交易按固定步长（每8分钟1点）均匀采样，全天形成约 30 个基准采样点
+ * 午间休市或半日停留在 50% 轴线，杜绝频繁伸缩与局部微小抖动放大
+ */
+export function computeSparkline(minutePoints: MinutePoint[], fallbackPrice?: number): number[] {
+  if (!minutePoints || minutePoints.length === 0) {
+    return fallbackPrice && fallbackPrice > 0 ? [fallbackPrice] : [];
+  }
+  if (minutePoints.length <= 30) {
+    return minutePoints.map(p => p.price);
+  }
+  const step = 8;
+  const sampled: number[] = [];
+  for (let i = 0; i < minutePoints.length; i += step) {
+    sampled.push(minutePoints[i].price);
+  }
+  const lastPrice = minutePoints[minutePoints.length - 1].price;
+  if (sampled[sampled.length - 1] !== lastPrice) {
+    sampled.push(lastPrice);
+  }
+  return sampled;
+}
 
 class MarketScheduler {
   private sseClients = new Set<Response>();
@@ -11,8 +35,11 @@ class MarketScheduler {
   private quoteTimer: NodeJS.Timeout | null = null;
   private detailTimer: NodeJS.Timeout | null = null;
   private pingTimer: NodeJS.Timeout | null = null;
+  private minuteTimer: NodeJS.Timeout | null = null;
   private lastFetchTime = 0;
   private activeViewingCodes = new Set<string>();
+  private currentSession: TradingSession = getSessionState();
+  private minuteRefreshIndex = 0;
 
   constructor() {
     this.startScheduler();
@@ -28,6 +55,8 @@ class MarketScheduler {
 
   public registerViewingCode(code: string) {
     this.activeViewingCodes.add(code);
+    // 立即触发一次该标的的高频细节拉取
+    this.fetchDetailsForCode(code).catch(() => {});
   }
 
   public unregisterViewingCode(code: string) {
@@ -55,16 +84,23 @@ class MarketScheduler {
 
     // SSE 15秒心跳 Ping (Section 5.3)
     this.pingTimer = setInterval(() => {
-      this.broadcast('ping', { time: Date.now() });
+      const nowSession = getSessionState();
+      this.checkSessionTransition(nowSession);
+      this.broadcast('ping', { time: Date.now(), session: nowSession });
     }, 15000);
 
     // 核心循环：动态根据时段调整频率 (Section 4.2)
     this.scheduleNextTick();
 
-    // 针对正在查看详情的标的拉取分时/逐笔 (每 5 秒)
+    // 针对正在查看详情的标的拉取分时/逐笔 (每 4 秒)
     this.detailTimer = setInterval(() => {
       this.fetchActiveDetailsRound();
-    }, 5000);
+    }, 4000);
+
+    // 盘中循环温和刷新全池分时走势 (每 20 秒轮换一批，使左侧列表所有股票分时图保持全天动态更新)
+    this.minuteTimer = setInterval(() => {
+      this.refreshPoolMinutesRound().catch(() => {});
+    }, 20000);
 
     // 启动后异步温和预热全股票池分时数据，使缩略图快速获得高精度真实走势
     setTimeout(() => {
@@ -72,14 +108,31 @@ class MarketScheduler {
     }, 1000);
   }
 
+  private checkSessionTransition(newSession: TradingSession) {
+    if (newSession !== this.currentSession) {
+      const prevSession = this.currentSession;
+      this.currentSession = newSession;
+      console.log(`[Scheduler] 交易时段切换: ${prevSession} -> ${newSession}`);
+      this.broadcast('session_change', { session: newSession, time: Date.now() });
+
+      // 当开盘或恢复交易时立即拉取全池行情和分时
+      if (newSession === 'MORNING' || newSession === 'AFTERNOON') {
+        this.fetchQuotesRound().catch(() => {});
+        this.refreshPoolMinutesRound().catch(() => {});
+      }
+    }
+  }
+
   private scheduleNextTick() {
     const session = getSessionState();
+    this.checkSessionTransition(session);
+
     let delayMs = 3000; // 默认 3 秒 (MORNING / AFTERNOON / AUCTION)
 
     if (session === 'LUNCH_BREAK') {
-      delayMs = 30000; // 午休 30 秒 (Section 4.2)
+      delayMs = 15000; // 午休缩短至 15 秒轮询，确保能精准捕获 13:00 下午开盘
     } else if (session === 'CLOSED') {
-      // 盘后休市，降低频率至 60 秒轮询保活或等待次日开盘
+      // 盘后休市，降低频率至 60 秒轮询保活
       delayMs = 60000;
     } else if (session === 'PRE_MARKET') {
       delayMs = 15000;
@@ -104,7 +157,6 @@ class MarketScheduler {
     if (pool.length === 0) return;
 
     const allCodes = pool.map(item => item.code);
-    // 超过 80 只标的分批抓取 (Section 3.4)
     const BATCH_SIZE = 80;
     const batches: string[][] = [];
     for (let i = 0; i < allCodes.length; i += BATCH_SIZE) {
@@ -116,7 +168,6 @@ class MarketScheduler {
     for (let i = 0; i < batches.length; i++) {
       const batchCodes = batches[i];
       if (i > 0) {
-        // 批次间错开 100ms 防止限流 (Section 3.4)
         await new Promise(r => setTimeout(r, 100));
       }
 
@@ -131,7 +182,7 @@ class MarketScheduler {
         }
       }
 
-      // 优先级 2: 新浪财经批量 (若腾讯不可用或熔断)
+      // 优先级 2: 新浪财经批量
       if (!quotesMap && sourceCircuitBreakers.sina.getStatus() !== 'OPEN') {
         try {
           quotesMap = await fetchSinaQuotes(batchCodes);
@@ -147,10 +198,12 @@ class MarketScheduler {
           const cached = cacheManager.getQuote(code);
 
           if (fresh && validateQuote(fresh, cached)) {
+            // 附带最新准确的分时降采样点
+            const minutePoints = cacheManager.getMinutePoints(code);
+            fresh.sparkline = computeSparkline(minutePoints, fresh.price);
             cacheManager.updateQuote(fresh);
             updatedSnapshots.push(fresh);
           } else if (cached) {
-            // 校验失败保留旧数据，标记为 stale
             cached.is_stale = true;
           }
         }
@@ -159,7 +212,7 @@ class MarketScheduler {
 
     this.lastFetchTime = Date.now();
 
-    // 通过 SSE 广播变动的 quote (Section 5.3)
+    // 通过 SSE 广播变动的 quote (含真实 sparkline)
     if (updatedSnapshots.length > 0) {
       for (const q of updatedSnapshots) {
         this.broadcast('quote_update', {
@@ -172,7 +225,8 @@ class MarketScheduler {
           low: q.low,
           volume: q.volume,
           amount: q.amount,
-          timestamp: q.timestamp
+          timestamp: q.timestamp,
+          sparkline: q.sparkline
         });
       }
     }
@@ -182,26 +236,66 @@ class MarketScheduler {
    * 针对当前用户正在激活查看的股票拉取分时/逐笔成交
    */
   private async fetchActiveDetailsRound() {
-    const session = getSessionState();
-    // 仅在开盘时段或初次查看时抓取
     if (this.activeViewingCodes.size === 0) return;
-
     for (const code of this.activeViewingCodes) {
-      try {
-        const trends = await fetchEastmoneyTrends(code);
-        if (trends.length > 0) {
-          cacheManager.setMinutePoints(code, trends);
-          this.broadcast('minute_update', { code, points: trends });
-        }
+      await this.fetchDetailsForCode(code);
+    }
+  }
 
-        const details = await fetchEastmoneyDetails(code);
-        if (details.length > 0) {
-          cacheManager.appendTicks(code, details);
-          this.broadcast('tick_update', { code, ticks: details });
+  private async fetchDetailsForCode(code: string) {
+    try {
+      const trends = await fetchEastmoneyTrends(code);
+      if (trends.length > 0) {
+        cacheManager.setMinutePoints(code, trends);
+        const sparkline = computeSparkline(trends);
+        const cachedQ = cacheManager.getQuote(code);
+        if (cachedQ) {
+          cachedQ.sparkline = sparkline;
+        }
+        this.broadcast('minute_update', { code, points: trends, sparkline });
+      }
+
+      const details = await fetchEastmoneyDetails(code);
+      if (details.length > 0) {
+        cacheManager.appendTicks(code, details);
+        this.broadcast('tick_update', { code, ticks: details });
+      }
+    } catch (e) {
+      // 容错
+    }
+  }
+
+  /**
+   * 盘中轮询刷新全股票池的分时数据 (分批平滑轮询)
+   */
+  public async refreshPoolMinutesRound() {
+    const session = getSessionState();
+    if (session === 'CLOSED' || session === 'PRE_MARKET') return;
+
+    const pool = cacheManager.getPool();
+    if (pool.length === 0) return;
+
+    const BATCH_SIZE = 6;
+    const startIdx = this.minuteRefreshIndex % pool.length;
+    const targetSlice = pool.slice(startIdx, startIdx + BATCH_SIZE);
+    this.minuteRefreshIndex = (startIdx + BATCH_SIZE) % pool.length;
+
+    for (const item of targetSlice) {
+      try {
+        const trends = await fetchEastmoneyTrends(item.code);
+        if (trends && trends.length > 0) {
+          cacheManager.setMinutePoints(item.code, trends);
+          const sparkline = computeSparkline(trends);
+          const q = cacheManager.getQuote(item.code);
+          if (q) {
+            q.sparkline = sparkline;
+          }
+          this.broadcast('minute_update', { code: item.code, points: trends, sparkline });
         }
       } catch (e) {
-        // 容错
+        // ignore
       }
+      await new Promise(r => setTimeout(r, 60));
     }
   }
 
@@ -213,11 +307,15 @@ class MarketScheduler {
           const trends = await fetchEastmoneyTrends(item.code);
           if (trends && trends.length > 0) {
             cacheManager.setMinutePoints(item.code, trends);
+            const sparkline = computeSparkline(trends);
+            const q = cacheManager.getQuote(item.code);
+            if (q) {
+              q.sparkline = sparkline;
+            }
           }
         } catch (e) {
           // ignore error on warm up
         }
-        // 错开 60ms 平滑抓取
         await new Promise(r => setTimeout(r, 60));
       }
     }
@@ -229,3 +327,4 @@ class MarketScheduler {
 }
 
 export const marketScheduler = new MarketScheduler();
+
