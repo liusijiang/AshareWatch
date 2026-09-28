@@ -72,3 +72,17 @@ export interface SupplementaryNote {
 }
 
 export type TradingSession = "PRE_MARKET" | "AUCTION" | "MORNING" | "LUNCH_BREAK" | "AFTERNOON" | "CLOSED";
+
+export interface HealthInfo {
+  status: string;
+  version?: string;
+  lastModified?: string;
+  lastModifiedTimestamp?: number;
+  session: TradingSession;
+  isTradingDay: boolean;
+  shanghaiTime: string;
+  sources: Record<string, string>;
+  poolCount: number;
+  quotesCount: number;
+  last_fetch_at: number;
+}

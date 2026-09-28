@@ -16,9 +16,11 @@ import {
   Wifi,
   WifiOff,
   Flame,
-  Tag
+  Tag,
+  GitCommit
 } from 'lucide-react';
-import { StockPoolItem, QuoteSnapshot, TradingSession, MinutePoint, TickPoint } from './types.ts';
+import { StockPoolItem, QuoteSnapshot, TradingSession, MinutePoint, TickPoint, HealthInfo } from './types.ts';
+import { APP_VERSION, CODE_LAST_MODIFIED } from './version.ts';
 import { PasswordGateModal } from './components/PasswordGateModal.tsx';
 import { AddStockDrawer } from './components/AddStockDrawer.tsx';
 import { MarketDetailPanel } from './components/MarketDetailPanel.tsx';
@@ -57,7 +59,11 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isAddDrawerOpen, setIsAddDrawerOpen] = useState(false);
   const [token, setToken] = useState<string | null>(localStorage.getItem('admin_token'));
-  const [healthInfo, setHealthInfo] = useState<any>(null);
+  const [healthInfo, setHealthInfo] = useState<HealthInfo | null>(null);
+  const [versionInfo, setVersionInfo] = useState({
+    version: APP_VERSION,
+    lastModified: CODE_LAST_MODIFIED
+  });
   const [showHealthModal, setShowHealthModal] = useState(false);
 
   // 1. 初始化拉取股票池和初始行情，并建立定时健康检查
@@ -204,6 +210,12 @@ export default function App() {
         es.addEventListener('ready', (e) => {
           const d = JSON.parse(e.data);
           if (d.session) setSession(d.session);
+          if (d.version || d.lastModified) {
+            setVersionInfo({
+              version: d.version || APP_VERSION,
+              lastModified: d.lastModified || CODE_LAST_MODIFIED
+            });
+          }
         });
 
         es.onerror = () => {
@@ -273,9 +285,15 @@ export default function App() {
   const fetchHealth = async () => {
     try {
       const res = await fetch('/api/health');
-      const data = await res.json();
+      const data: HealthInfo = await res.json();
       setHealthInfo(data);
       if (data.session) setSession(data.session);
+      if (data.version || data.lastModified) {
+        setVersionInfo({
+          version: data.version || APP_VERSION,
+          lastModified: data.lastModified || CODE_LAST_MODIFIED
+        });
+      }
     } catch (e) {
       // ignore
     }
@@ -436,8 +454,25 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex items-center space-x-2.5 text-xs font-mono">
-          <div className="flex items-center space-x-1 text-slate-400">
+        <div className="flex items-center space-x-2 text-xs font-mono">
+          {/* 版本号与代码最后修改时间 (右上角常驻) */}
+          <div 
+            onClick={() => setShowHealthModal(true)}
+            className="flex items-center space-x-1.5 px-2 py-0.5 rounded bg-slate-800/90 border border-slate-700/70 text-slate-300 text-[11px] cursor-pointer hover:bg-slate-800 hover:border-slate-600 transition select-none shadow-sm"
+            title={`应用版本: ${versionInfo.version}\n代码最后修改时间: ${versionInfo.lastModified} (CST)\n点击查看系统诊断面板`}
+          >
+            <span className="font-semibold text-sky-400 bg-sky-500/15 px-1 py-0.2 rounded text-[10px] border border-sky-500/25">
+              {versionInfo.version}
+            </span>
+            <span className="text-slate-600 hidden sm:inline">|</span>
+            <div className="hidden sm:flex items-center space-x-1 text-slate-400">
+              <GitCommit className="w-3 h-3 text-slate-500 shrink-0" />
+              <span className="text-slate-500 text-[10px] hidden md:inline">修改:</span>
+              <span className="text-slate-300 text-[10px] font-mono tracking-tight">{versionInfo.lastModified}</span>
+            </div>
+          </div>
+
+          <div className="hidden md:flex items-center space-x-1 text-slate-400">
             <Clock className="w-3 h-3 text-slate-500" />
             <span className="text-[11px]">{shanghaiClock || '09:30:00'} CST</span>
           </div>
@@ -720,6 +755,13 @@ export default function App() {
             </div>
 
             <div className="space-y-2 text-xs font-mono">
+              <div className="flex justify-between p-2 rounded bg-slate-950 border border-slate-800">
+                <span className="text-slate-400">应用版本与代码状态:</span>
+                <span className="text-sky-400 font-bold">
+                  {versionInfo.version}
+                  <span className="text-slate-400 font-normal ml-2">({versionInfo.lastModified} CST)</span>
+                </span>
+              </div>
               <div className="flex justify-between p-2 rounded bg-slate-950 border border-slate-800">
                 <span className="text-slate-400">当前交易时段:</span>
                 <span className="text-emerald-400 font-bold">{healthInfo?.session}</span>

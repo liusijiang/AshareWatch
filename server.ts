@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { cacheManager } from './server/cacheManager.ts';
 import { marketScheduler, computeSparkline } from './server/scheduler.ts';
@@ -188,6 +189,74 @@ app.post('/api/active-view', (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
+// ==================== 版本与代码最后修改时间 ====================
+function getCodeLastModifiedInfo(): { version: string; lastModified: string; lastModifiedTimestamp: number } {
+  let version = 'v1.2.0';
+  try {
+    const pkgPath = path.resolve(process.cwd(), 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      if (pkg.version) version = `v${pkg.version}`;
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  let maxTime = 0;
+  const targetPaths = [
+    'server.ts',
+    'package.json',
+    'src/App.tsx',
+    'src/types.ts',
+    'src/version.ts',
+    'src/components',
+    'server'
+  ];
+
+  for (const item of targetPaths) {
+    const fullPath = path.resolve(process.cwd(), item);
+    if (!fs.existsSync(fullPath)) continue;
+    try {
+      const stat = fs.statSync(fullPath);
+      if (stat.isDirectory()) {
+        const files = fs.readdirSync(fullPath);
+        for (const f of files) {
+          if (f.endsWith('.ts') || f.endsWith('.tsx') || f.endsWith('.json')) {
+            const fStat = fs.statSync(path.join(fullPath, f));
+            if (fStat.mtimeMs > maxTime) maxTime = fStat.mtimeMs;
+          }
+        }
+      } else {
+        if (stat.mtimeMs > maxTime) maxTime = stat.mtimeMs;
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  const d = new Date(maxTime || Date.now());
+  const formatted = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(d).replace(/\//g, '-');
+
+  return {
+    version,
+    lastModified: formatted,
+    lastModifiedTimestamp: maxTime
+  };
+}
+
+app.get('/api/version', (_req: Request, res: Response) => {
+  res.json(getCodeLastModifiedInfo());
+});
+
 // ==================== SSE 实时行情流 (Section 5.3) ====================
 app.get('/api/stream', (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/event-stream');
@@ -196,8 +265,9 @@ app.get('/api/stream', (req: Request, res: Response) => {
   res.setHeader('X-Accel-Buffering', 'no'); // 禁用 nginx 缓冲
   res.flushHeaders?.();
 
-  // 发送初始已就绪事件
-  res.write(`event: ready\ndata: ${JSON.stringify({ time: Date.now(), session: getSessionState() })}\n\n`);
+  // 发送初始已就绪事件 (含版本与构建元信息)
+  const buildInfo = getCodeLastModifiedInfo();
+  res.write(`event: ready\ndata: ${JSON.stringify({ time: Date.now(), session: getSessionState(), ...buildInfo })}\n\n`);
 
   marketScheduler.addSseClient(res);
 });
@@ -205,8 +275,12 @@ app.get('/api/stream', (req: Request, res: Response) => {
 // ==================== 系统健康检查 (Section 5.3) ====================
 app.get('/api/health', (_req: Request, res: Response) => {
   const shTime = getShanghaiDate();
+  const buildInfo = getCodeLastModifiedInfo();
   res.json({
     status: 'ok',
+    version: buildInfo.version,
+    lastModified: buildInfo.lastModified,
+    lastModifiedTimestamp: buildInfo.lastModifiedTimestamp,
     session: getSessionState(),
     isTradingDay: isTradingDay(),
     shanghaiTime: `${shTime.dateStr} ${shTime.timeStr}`,
